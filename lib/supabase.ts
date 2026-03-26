@@ -8,6 +8,7 @@ export type Entry = {
   date: string
   revenus: number
   accounts: Record<string, number>
+  deposits: Record<string, number>
   created_at: string
   updated_at: string
 }
@@ -24,6 +25,7 @@ export type EntryInsert = {
   date: string
   revenus: number
   accounts: Record<string, number>
+  deposits: Record<string, number>
 }
 
 // ─── Client navigateur ───────────────────────────────────────
