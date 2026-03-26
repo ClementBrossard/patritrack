@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { signInWithEmail, signUpWithEmail, signInWithGoogle, createClient } from '@/lib/supabase'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirectTo') || '/'
@@ -22,7 +22,6 @@ export default function LoginPage() {
     setError('')
     setSuccess('')
     setLoading(true)
-
     try {
       if (mode === 'login') {
         await signInWithEmail(email, password)
@@ -71,8 +70,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-
-        {/* Logo */}
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-medium tracking-tight">
             Patri<span className="text-violet-500">·</span>track
@@ -83,8 +80,6 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-7 shadow-sm">
-
-          {/* Erreur / Succès */}
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
               {error}
@@ -110,7 +105,6 @@ export default function LoginPage() {
                 />
               </div>
             )}
-
             <div>
               <label className="block text-xs font-medium text-neutral-500 mb-1.5">Email</label>
               <input
@@ -122,7 +116,6 @@ export default function LoginPage() {
                 required
               />
             </div>
-
             <div>
               <label className="block text-xs font-medium text-neutral-500 mb-1.5">Mot de passe</label>
               <input
@@ -135,7 +128,6 @@ export default function LoginPage() {
                 minLength={6}
               />
             </div>
-
             <button
               type="submit"
               disabled={loading}
@@ -145,7 +137,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Mot de passe oublié */}
           {mode === 'login' && (
             <div className="mt-3 text-center">
               <button
@@ -167,7 +158,7 @@ export default function LoginPage() {
           <button
             onClick={handleGoogle}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-750 text-sm transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-neutral-50 text-sm transition-colors disabled:opacity-50"
           >
             <svg width="16" height="16" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -200,5 +191,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 flex items-center justify-center"><div className="text-sm text-neutral-400">Chargement…</div></div>}>
+      <LoginForm />
+    </Suspense>
   )
 }
