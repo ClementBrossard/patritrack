@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ComposedChart
 } from 'recharts'
 import {
   getEntries, getUserAccounts, upsertEntry, updateEntry,
@@ -51,9 +51,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ msg: string; type: 's' | 'e' } | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
-  const [form, setForm] = useState<{ date: string; revenus: string; accounts: Record<string, string>; deposits: Record<string, string> }>({
-    date: nowMonth(), revenus: '', accounts: {}, deposits: {}
-  })
+  const [form, setForm] = useState<{
+    date: string
+    revenus: string
+    accounts: Record<string, string>
+    deposits: Record<string, string>
+  }>({ date: nowMonth(), revenus: '', accounts: {}, deposits: {} })
   const [newAccName, setNewAccName] = useState('')
 
   useEffect(() => {
@@ -74,22 +77,43 @@ export default function Home() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  function initForm(entry?: Entry) {
+  function getLastEntry(entriesList: Entry[]): Entry | undefined {
+    return [...entriesList].sort((a, b) => a.date.localeCompare(b.date)).at(-1)
+  }
+
+  function initForm(entry?: Entry, entriesList?: Entry[], accountsList?: UserAccount[]) {
+    const currentEntries = entriesList ?? entries
+    const currentAccounts = accountsList ?? accounts
+
     if (entry) {
+      // Mode édition — on charge les valeurs existantes
       setEditId(entry.id)
       const accs: Record<string, string> = {}
       const deps: Record<string, string> = {}
-      accounts.forEach(a => {
+      currentAccounts.forEach(a => {
         accs[a.name] = String(entry.accounts?.[a.name] ?? '')
         deps[a.name] = String(entry.deposits?.[a.name] ?? '')
       })
       setForm({ date: entry.date, revenus: String(entry.revenus || ''), accounts: accs, deposits: deps })
     } else {
+      // Mode création — on pré-remplit avec le dernier mois connu
       setEditId(null)
+      const lastEntry = getLastEntry(currentEntries)
       const accs: Record<string, string> = {}
       const deps: Record<string, string> = {}
-      accounts.forEach(a => { accs[a.name] = ''; deps[a.name] = '' })
-      setForm({ date: nowMonth(), revenus: '', accounts: accs, deposits: deps })
+      currentAccounts.forEach(a => {
+        // Soldes : pré-remplis avec le mois précédent
+        accs[a.name] = lastEntry ? String(lastEntry.accounts?.[a.name] ?? '') : ''
+        // Versements : toujours vides (repart de 0 chaque mois)
+        deps[a.name] = ''
+      })
+      setForm({
+        date: nowMonth(),
+        // Revenus : pré-remplis avec le mois précédent
+        revenus: lastEntry ? String(lastEntry.revenus || '') : '',
+        accounts: accs,
+        deposits: deps
+      })
     }
   }
 
@@ -175,9 +199,8 @@ export default function Home() {
   const perfPct = prv > 0 ? (perfMarche / prv) * 100 : 0
   const avgR = sorted.length ? sorted.reduce((s, e) => s + (e.revenus || 0), 0) / sorted.length : 0
   const avgD = sorted.length ? sorted.reduce((s, e) => s + getTotalDeposits(e), 0) / sorted.length : 0
-  const avgDepenses = avgR - avgD
+  const avgDepenses = Math.max(0, avgR - avgD)
 
-  // Données mensuelles pour graphiques
   const monthlyData = sorted.map((e, i) => {
     const prevE = sorted[i - 1]
     const total = getTotal(e)
@@ -185,19 +208,16 @@ export default function Home() {
     const deposits = getTotalDeposits(e)
     const variation = total - prevTotal
     const perf = variation - deposits
-    const depenses = (e.revenus || 0) - deposits
     return {
       name: getLabel(e.date),
       patrimoine: total,
       revenus: e.revenus || 0,
       versements: deposits,
-      depenses: Math.max(0, depenses),
+      depenses: Math.max(0, (e.revenus || 0) - deposits),
       performance: perf,
-      epargne: variation,
     }
   })
 
-  // Données annuelles agrégées
   const annualMap: Record<string, any> = {}
   sorted.forEach((e, i) => {
     const year = getYear(e.date)
@@ -207,20 +227,16 @@ export default function Home() {
     const deposits = getTotalDeposits(e)
     const variation = total - prevTotal
     const perf = variation - deposits
-    const depenses = Math.max(0, (e.revenus || 0) - deposits)
-    if (!annualMap[year]) {
-      annualMap[year] = { name: year, revenus: 0, versements: 0, depenses: 0, performance: 0, patrimoine: 0 }
-    }
+    if (!annualMap[year]) annualMap[year] = { name: year, revenus: 0, versements: 0, depenses: 0, performance: 0, patrimoine: 0 }
     annualMap[year].revenus += e.revenus || 0
     annualMap[year].versements += deposits
-    annualMap[year].depenses += depenses
+    annualMap[year].depenses += Math.max(0, (e.revenus || 0) - deposits)
     annualMap[year].performance += perf
     annualMap[year].patrimoine = total
   })
   const annualData = Object.values(annualMap)
   const chartData = period === 'monthly' ? monthlyData : annualData
 
-  // Performance par compte
   const perfByAccount = accounts.map((acc, i) => {
     if (!latest || !prev) return { name: acc.name, perf: 0, pct: 0, color: COLORS[i % COLORS.length] }
     const curVal = Number(latest.accounts?.[acc.name] || 0)
@@ -236,8 +252,8 @@ export default function Home() {
     : []
 
   const userInitials = (user?.email || '??').slice(0, 2).toUpperCase()
-
-  const ttStyle = { fontSize: 12, borderRadius: 8, border: '0.5px solid var(--color-border)' }
+  const ttStyle = { fontSize: 12, borderRadius: 8 }
+  const lastEntry = getLastEntry(entries)
 
   return (
     <div className="flex h-screen bg-neutral-100 dark:bg-neutral-950 font-sans text-sm text-neutral-900 dark:text-neutral-100">
@@ -260,7 +276,9 @@ export default function Home() {
             <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 flex items-center justify-center text-xs font-medium flex-shrink-0">{userInitials}</div>
             <div className="min-w-0"><div className="text-xs font-medium truncate">{user?.email?.split('@')[0]}</div></div>
           </div>
-          <button onClick={handleLogout} className="w-full text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 px-2 py-1 text-left transition-colors">Se déconnecter</button>
+          <button onClick={handleLogout} className="w-full text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 px-2 py-1 text-left transition-colors">
+            Se déconnecter
+          </button>
         </div>
       </aside>
 
@@ -276,7 +294,6 @@ export default function Home() {
                 <p className="text-xs text-neutral-400 mt-0.5">{user?.email?.split('@')[0]}</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* Toggle mensuel / annuel */}
                 <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden text-xs">
                   <button onClick={() => setPeriod('monthly')}
                     className={`px-3 py-1.5 transition-colors ${period === 'monthly' ? 'bg-violet-600 text-white' : 'text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800'}`}>
@@ -293,14 +310,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* KPIs principaux */}
             <div className="grid grid-cols-4 gap-3 mb-4">
               <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4">
                 <div className="text-xs text-neutral-400 mb-1.5">Patrimoine total</div>
                 <div className="text-xl font-medium font-mono tracking-tight">{fmt(cur)}</div>
-                <div className={`text-xs mt-1 ${varAbs >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                  {varAbs >= 0 ? '+' : ''}{fmt(varAbs)} ce mois
-                </div>
+                <div className={`text-xs mt-1 ${varAbs >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>{varAbs >= 0 ? '+' : ''}{fmt(varAbs)} ce mois</div>
               </div>
               <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4">
                 <div className="text-xs text-neutral-400 mb-1.5">Revenus moyens</div>
@@ -308,18 +322,17 @@ export default function Home() {
                 <div className="text-xs mt-1 text-neutral-400">nets / mois</div>
               </div>
               <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4">
-                <div className="text-xs text-neutral-400 mb-1.5">Versements moyens</div>
+                <div className="text-xs text-neutral-400 mb-1.5">Versements moy.</div>
                 <div className="text-xl font-medium font-mono tracking-tight text-violet-500">{fmt(avgD)}</div>
-                <div className="text-xs mt-1 text-neutral-400">épargnés / mois</div>
+                <div className="text-xs mt-1 text-neutral-400">placés / mois</div>
               </div>
               <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4">
-                <div className="text-xs text-neutral-400 mb-1.5">Dépenses moyennes</div>
+                <div className="text-xs text-neutral-400 mb-1.5">Dépenses moy.</div>
                 <div className="text-xl font-medium font-mono tracking-tight text-amber-500">{fmt(avgDepenses)}</div>
                 <div className="text-xs mt-1 text-neutral-400">revenus − versements</div>
               </div>
             </div>
 
-            {/* KPIs performance */}
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-neutral-50 dark:bg-neutral-900 rounded-xl p-4">
                 <div className="text-xs text-neutral-400 mb-1.5">Perf. marché ce mois</div>
@@ -338,7 +351,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Graphique patrimoine */}
             <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-5 mb-4">
               <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">Évolution du patrimoine</div>
               <ResponsiveContainer width="100%" height={180}>
@@ -351,11 +363,8 @@ export default function Home() {
               </ResponsiveContainer>
             </div>
 
-            {/* Revenus / Versements / Dépenses */}
             <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-5 mb-4">
-              <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">
-                Revenus · Versements · Dépenses
-              </div>
+              <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">Revenus · Versements · Dépenses</div>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} barGap={2}>
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -369,11 +378,8 @@ export default function Home() {
               </ResponsiveContainer>
             </div>
 
-            {/* Performance marché vs versements */}
             <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-5 mb-4">
-              <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">
-                Performance marché vs versements
-              </div>
+              <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">Performance marché vs versements</div>
               <ResponsiveContainer width="100%" height={180}>
                 <ComposedChart data={chartData}>
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -386,12 +392,11 @@ export default function Home() {
               </ResponsiveContainer>
             </div>
 
-            {/* Performance par compte + répartition */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-5">
                 <div className="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-4">Performance par compte (ce mois)</div>
                 <div className="flex flex-col gap-2">
-                  {perfByAccount.map((p, i) => (
+                  {perfByAccount.length > 0 && prev ? perfByAccount.map((p, i) => (
                     <div key={i} className="flex items-center justify-between py-2 border-b border-neutral-50 dark:border-neutral-800 last:border-0">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
@@ -404,8 +409,9 @@ export default function Home() {
                         </span>
                       </div>
                     </div>
-                  ))}
-                  {perfByAccount.length === 0 && <div className="text-xs text-neutral-400 text-center py-4">Besoin d'au moins 2 mois de données</div>}
+                  )) : (
+                    <div className="text-xs text-neutral-400 text-center py-4">Besoin d'au moins 2 mois de données</div>
+                  )}
                 </div>
               </div>
 
@@ -445,7 +451,14 @@ export default function Home() {
         {view === 'add' && (
           <div className="max-w-lg">
             <div className="flex items-center justify-between mb-5">
-              <h1 className="text-base font-medium">{editId ? "Modifier l'entrée" : 'Nouvelle saisie'}</h1>
+              <div>
+                <h1 className="text-base font-medium">{editId ? "Modifier l'entrée" : 'Nouvelle saisie'}</h1>
+                {!editId && lastEntry && (
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Pré-rempli avec les valeurs de {getLabel(lastEntry.date)} — modifie ce qui a changé
+                  </p>
+                )}
+              </div>
               <button onClick={() => setView('history')} className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">Annuler</button>
             </div>
 
@@ -453,18 +466,25 @@ export default function Home() {
               <div className="grid grid-cols-2 gap-4 mb-5">
                 <div>
                   <label className="block text-xs font-medium text-neutral-400 mb-1.5">Mois / Année</label>
-                  <input type="month" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  <input type="month" value={form.date}
+                    onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
                     className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-neutral-400 mb-1.5">Revenus nets (€)</label>
-                  <input type="number" placeholder="3 500" value={form.revenus} onChange={e => setForm(f => ({ ...f, revenus: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                  <input
+                    type="number"
+                    placeholder="3 500"
+                    value={form.revenus}
+                    onClick={e => (e.target as HTMLInputElement).select()}
+                    onChange={e => setForm(f => ({ ...f, revenus: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  />
                 </div>
               </div>
 
               <div className="border-t border-neutral-100 dark:border-neutral-800 pt-4 mb-5">
-                <div className="grid grid-cols-2 gap-x-4 mb-2">
+                <div className="grid grid-cols-2 gap-x-4 mb-3">
                   <div className="text-xs font-medium text-neutral-400">Solde actuel (€)</div>
                   <div className="text-xs font-medium text-violet-500">Versement du mois (€)</div>
                 </div>
@@ -476,12 +496,22 @@ export default function Home() {
                         <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">{acc.name}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <input type="number" placeholder="0" value={form.accounts[acc.name] || ''}
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={form.accounts[acc.name] || ''}
+                          onClick={e => (e.target as HTMLInputElement).select()}
                           onChange={e => setForm(f => ({ ...f, accounts: { ...f.accounts, [acc.name]: e.target.value } }))}
-                          className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
-                        <input type="number" placeholder="0" value={form.deposits[acc.name] || ''}
+                          className="w-full px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={form.deposits[acc.name] || ''}
+                          onClick={e => (e.target as HTMLInputElement).select()}
                           onChange={e => setForm(f => ({ ...f, deposits: { ...f.deposits, [acc.name]: e.target.value } }))}
-                          className="w-full px-3 py-2 rounded-lg border border-violet-200 dark:border-violet-800 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
+                          className="w-full px-3 py-2 rounded-lg border border-violet-200 dark:border-violet-800 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
                       </div>
                     </div>
                   ))}
@@ -519,7 +549,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...sorted].reverse().map((e, _, arr) => {
+                  {[...sorted].reverse().map((e) => {
                     const total = getTotal(e)
                     const origIdx = sorted.findIndex(x => x.id === e.id)
                     const prevEntry = origIdx > 0 ? sorted[origIdx - 1] : null
